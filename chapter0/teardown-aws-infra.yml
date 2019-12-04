@@ -135,7 +135,6 @@
               cidr_block: "{{ vpc_cidr_block }}"
               region: "{{ aws_region }}"
               state: absent
-              wait: yes
             with_items: "{{ vpc_facts.vpcs }}"
 
         when: vpc_facts.vpcs|length>0
@@ -144,39 +143,25 @@
 # Route53
 #---------------------------------------------------
 
-      - name: Get private DNS route info
-        route53:
-          command: get
-          zone: "{{ intranet }}"
-          record: "workstation.{{ intranet }}"
-          type: A
-          private_zone: true
-        register: rec
-        ignore_errors: yes
+      - name: Delete workstation route
+        include: delete-route.yml zone={{ intranet }} record="workstation.{{ intranet }}" private_zone="true"
 
-      - name: Delete private DNS route record
-        route53:
-          command: delete
-          zone: "{{ intranet }}"
-          record: "{{ rec.set.record }}"
-          ttl: "{{ rec.set.ttl }}"
-          type: "{{ rec.set.type }}"
-          value: "{{ rec.set.value }}"
-          private_zone: true
-        when: not((rec.set.record is undefined) or (rec.set.record is none))
-        ignore_errors: yes
+      - name: Delete node routes
+        include: delete-route.yml zone={{ intranet }} record="server{{item}}.{{ intranet }}" private_zone="true"
+        with_sequence: start=1 end=2
+        ignore_errors: true
 
-      - name: Delete private DNS zone
-        route53_zone:
-          zone: "{{ intranet }}"
-          state: absent
+      # - name: Delete private DNS zone
+      #   route53_zone:
+      #     zone: "{{ intranet }}"
+      #     state: absent
 
-      # - name: Get private DNS zone
-      #   shell: aws route53 list-hosted-zones --query 'HostedZones[*]' --output text | grep '\/hostedzone\/.*{{ intranet }}' | sed -e 's/.*\///' -e 's/[^a-zA-Z0-9].*//'
-      #   register: hosted_zone_id
+      - name: Get private DNS zone
+        shell: aws route53 list-hosted-zones --query 'HostedZones[*]' --output text | grep '\/hostedzone\/.*{{ intranet }}' | sed -e 's/.*\///' -e 's/[^a-zA-Z0-9].*//'
+        register: hosted_zone_id
 
       # - debug: var=hosted_zone_id.stdout_lines[0]
 
-      # - name: Delete private DNS zone
-      #   shell: aws route53 delete-hosted-zone --id '{{ hosted_zone_id.stdout_lines[0] }}'
-      #   when: hosted_zone_id.stdout_lines[0] is defined
+      - name: Delete private DNS zone
+        shell: aws route53 delete-hosted-zone --id '{{ hosted_zone_id.stdout_lines[0] }}'
+        when: hosted_zone_id.stdout_lines[0] is defined
