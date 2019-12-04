@@ -151,11 +151,6 @@
         with_sequence: start=1 end=2
         ignore_errors: true
 
-      # - name: Delete private DNS zone
-      #   route53_zone:
-      #     zone: "{{ intranet }}"
-      #     state: absent
-
       - name: Get private DNS zone
         shell: aws route53 list-hosted-zones --query 'HostedZones[*]' --output text | grep '\/hostedzone\/.*{{ intranet }}' | sed -e 's/.*\///' -e 's/[^a-zA-Z0-9].*//'
         register: hosted_zone_id
