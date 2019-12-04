@@ -1,0 +1,38 @@
+ec2_key_name: changeme
+aws_region: us-east-1
+aws_access_key: changeme
+aws_secret_key: changeme
+
+# Tags
+app_id: rh294
+deploy_env: dev
+release: 1.0.1
+vpc_tag: "{{ ec2_key_name }}-vpc"
+vpc_subnet_tag: "{{ ec2_key_name }}-subnet"
+vpc_route_tag: "{{ ec2_key_name }}-route"
+
+# Network
+domain: changeme
+intranet: "{{ domain }}.local"
+route53_hosted_zone_id: changeme
+vpc_cidr_block: 10.0.0.0/16
+public_subnet_1_cidr: 10.0.0.0/24
+public_route_cidr_block: 0.0.0.0/0
+http_port: 80
+http_proxy_port: 8080
+https_port: 443
+https_proxy_port: 8443
+ssh_port: 22
+
+# Groups
+ec2_security_group: "{{ ec2_key_name }}-default-sg"
+ec2_security_group_ingress: "{{ ec2_key_name }}-ingress-sg"
+ec2_security_group_egress: "{{ ec2_key_name }}-egress-sg"
+ec2_security_group_ssh: "{{ ec2_key_name }}-ssh-sg"
+
+# EC2
+ec2_image: ami-09b947b170ccd0dbc
+# redhat_owner_id: 309956199498
+ec2_instance_type: t2.medium
+ec2_instance_count: 1
+os_root_vol_size: 25

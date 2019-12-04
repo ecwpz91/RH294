@@ -1,0 +1,339 @@
+---
+  - name: Setup AWS EC2 infrastructure for RH294 course
+    hosts: localhost
+    vars_files: vars/aws.example.yml
+    tasks:
+
+#---------------------------------------------------
+# Key
+#---------------------------------------------------
+
+      - name: Create ec2 key
+        ec2_key:
+          name: "{{ ec2_key_name }}"
+          region: "{{ aws_region }}"
+          aws_access_key: "{{ aws_access_key }}"
+          aws_secret_key: "{{ aws_secret_key }}"
+          key_material: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+          force: false
+          state: present
+
+#---------------------------------------------------
+# VPC
+#---------------------------------------------------
+
+      - name: Create public VPC
+        ec2_vpc_net:
+         name: "{{ vpc_tag }}"
+         cidr_block: "{{ vpc_cidr_block }}"
+         region: "{{ aws_region }}"
+         aws_access_key: "{{ aws_access_key }}"
+         aws_secret_key: "{{ aws_secret_key }}"
+         tags:
+          Name: "{{ vpc_tag }}"
+          namespace: "{{ ec2_key_name }}"
+        register: vpc_facts
+
+      - name: Set vpc fact
+        set_fact:
+         vpc_id: "{{ vpc_facts['vpc']['id'] }}"
+
+#---------------------------------------------------
+# Subnet
+#---------------------------------------------------
+
+      - name: Create public subnet
+        ec2_vpc_subnet:
+         vpc_id: "{{ vpc_id }}"
+         cidr: "{{ public_subnet_1_cidr }}"
+         az: "{{ aws_region }}a"
+         region: "{{ aws_region }}"
+         aws_access_key: "{{ aws_access_key }}"
+         aws_secret_key: "{{ aws_secret_key }}"
+         tags:
+          Name: "{{ vpc_subnet_tag }}"
+          namespace: "{{ ec2_key_name }}"
+        register: subnet_facts
+
+      - name: Set subnet fact
+        set_fact:
+         public_subnet_id: "{{ subnet_facts['subnet']['id'] }}"
+
+#---------------------------------------------------
+# Gateway
+#---------------------------------------------------
+
+      - name: Create internet gateway
+        ec2_vpc_igw:
+         vpc_id: "{{ vpc_id }}"
+         region: "{{ aws_region }}"
+         aws_access_key: "{{ aws_access_key }}"
+         aws_secret_key: "{{ aws_secret_key }}"
+         state: "present"
+        register: igw_facts
+
+      - name: Set gateway fact
+        set_fact:
+         igw_id: "{{ igw_facts['gateway_id'] }}"
+
+#---------------------------------------------------
+# Route Table
+#---------------------------------------------------
+
+      - name: Create route table
+        ec2_vpc_route_table:
+         vpc_id: "{{ vpc_id }}"
+         region: "{{ aws_region }}"
+         aws_access_key: "{{ aws_access_key }}"
+         aws_secret_key: "{{ aws_secret_key }}"
+         subnets:
+          - "{{ public_subnet_id }}"
+         routes:
+          - dest: "{{ public_route_cidr_block }}"
+            gateway_id: "{{ igw_id }}"
+         tags:
+           Name: "{{ vpc_route_tag }}"
+           namespace: "{{ ec2_key_name }}"
+        register: route_facts
+
+      - name: Set availability zone fact
+        set_fact:
+          availability_zone: "{{ subnet_facts['subnet']['availability_zone'] }}"
+
+#---------------------------------------------------
+# Security Groups
+#---------------------------------------------------
+
+      - name: Create vpc security group
+        ec2_group:
+         name: "{{ ec2_security_group }}"
+         description: "Default security group that allows all instances in the VPC to talk to each other over any port and protocol."
+         vpc_id: "{{ vpc_id }}"
+         region: "{{ aws_region }}"
+         aws_access_key: "{{ aws_access_key }}"
+         aws_secret_key: "{{ aws_secret_key }}"
+         state: "present"
+         rules:
+          - proto: "-1"
+            from_port: "0"
+            to_port: "0"
+            group_name: "{{ ec2_security_group }}"
+         rules_egress:
+          - proto: "-1"
+            from_port: "0"
+            to_port: "0"
+            group_name: "{{ ec2_security_group }}"
+
+      - name: Create ingress security group
+        ec2_group:
+           name: "{{ ec2_security_group_ingress }}"
+           description: "Security group that allows public ingress to instances, HTTP, HTTPS and more."
+           vpc_id: "{{ vpc_id }}"
+           region: "{{ aws_region }}"
+           aws_access_key: "{{ aws_access_key }}"
+           aws_secret_key: "{{ aws_secret_key }}"
+           state: "present"
+           rules:
+             - proto: "tcp"
+               from_port: "{{ http_port }}"
+               to_port: "{{ http_port }}"
+               cidr_ip: "{{ public_route_cidr_block }}"
+             - proto: "tcp"
+               from_port: "{{ http_proxy_port }}"
+               to_port: "{{ http_proxy_port }}"
+               cidr_ip: "{{ public_route_cidr_block }}"
+             - proto: "tcp"
+               from_port: "{{ https_port }}"
+               to_port: "{{ https_port }}"
+               cidr_ip: "{{ public_route_cidr_block }}"
+             - proto: "tcp"
+               from_port: "{{ https_proxy_port }}"
+               to_port: "{{ https_proxy_port }}"
+               cidr_ip: "{{ public_route_cidr_block }}"
+           rules_egress: []
+
+      - name: Create egress security group
+        ec2_group:
+         name: "{{ ec2_security_group_egress }}"
+         description: "This security group allows public egress from the instances for HTTP and HTTPS, which is needed for yum updates, git access etc etc."
+         vpc_id: "{{ vpc_id }}"
+         region: "{{ aws_region }}"
+         aws_access_key: "{{ aws_access_key }}"
+         aws_secret_key: "{{ aws_secret_key }}"
+         state: "present"
+         rules_egress:
+          - proto: "tcp"
+            from_port: "{{ http_port }}"
+            to_port: "{{ http_port }}"
+            cidr_ip: "{{ public_route_cidr_block }}"
+          - proto: "tcp"
+            from_port: "{{ https_port }}"
+            to_port: "{{ https_port }}"
+            cidr_ip: "{{ public_route_cidr_block }}"
+
+      - name: Create ssh security group
+        ec2_group:
+         name: "{{ ec2_security_group_ssh }}"
+         description: "Default security group that allows all instances in the VPC to talk to each other over any port and protocol."
+         vpc_id: "{{ vpc_id }}"
+         region: "{{ aws_region }}"
+         aws_access_key: "{{ aws_access_key }}"
+         aws_secret_key: "{{ aws_secret_key }}"
+         state: "present"
+         rules:
+          - proto: "tcp"
+            from_port: "{{ ssh_port }}"
+            to_port: "{{ ssh_port }}"
+            cidr_ip: "{{ public_route_cidr_block }}"
+         rules_egress: []
+
+
+#---------------------------------------------------
+# AMI
+#---------------------------------------------------
+
+      - name: Find latest AMI
+        ec2_ami_facts:
+          owners: "{{ redhat_owner_id }}"
+          region: "{{ aws_region }}"
+          aws_access_key: "{{ aws_access_key }}"
+          aws_secret_key: "{{ aws_secret_key }}"
+          filters:
+            name: "RHEL-8*"
+        register: ami_find
+        when: redhat_owner_id is defined
+
+      - name: Set default AMI
+        set_fact:
+          ami_find: "{{ ami_find['images'] | sort(attribute='creation_date') | last }}"
+        when: (ec2_image is not defined) and
+              (redhat_owner_id is defined)
+
+      - name: Set AMI image
+        set_fact:
+          ec2_image: "{{ ami_find['image_id'] }}"
+        when: (ec2_image is not defined) and
+              (redhat_owner_id is defined)
+
+      - name: Find AMI ID
+        ec2_ami_facts:
+          image_ids: "{{ ec2_image }}"
+          region: "{{ aws_region }}"
+          aws_access_key: "{{ aws_access_key }}"
+          aws_secret_key: "{{ aws_secret_key }}"
+        register: "ami_find"
+
+      - name: Set AMI device
+        set_fact:
+          ec2_device: "{{ ami_find['images'][0]['root_device_name'] }}"
+
+      # - debug: msg="{{ ec2_image }}"
+      # - debug: msg="{{ ec2_device }}"
+
+#---------------------------------------------------
+# Workstation EC2 instace
+#---------------------------------------------------
+
+      - name: Provision workstation
+        ec2:
+         instance_type: "{{ ec2_instance_type }}"
+         image: "{{ ec2_image }}"
+         region: "{{ aws_region }}"
+         aws_access_key: "{{ aws_access_key }}"
+         aws_secret_key: "{{ aws_secret_key }}"
+         wait: true
+         key_name: "{{ ec2_key_name }}"
+         vpc_subnet_id: "{{ public_subnet_id }}"
+         group: ['{{ ec2_security_group }}', '{{ ec2_security_group_ingress }}', '{{ ec2_security_group_egress }}', '{{ ec2_security_group_ssh }}']
+         volumes:
+          - device_name: "{{ ec2_device }}"
+            volume_size: "{{ os_root_vol_size }}"
+            volume_type: gp2
+            delete_on_termination: true
+         count_tag:
+          Name: "{{ ec2_key_name }}-workstation"
+         instance_tags:
+          Name: "{{ ec2_key_name }}-workstation"
+          namespace: "{{ ec2_key_name }}"
+          AppID: "{{ app_id }}"
+          Role: "workstation"
+          Env: "{{ deploy_env }}"
+          SemVer: "{{ release }}"
+          Type: "{{ ec2_instance_type }}"
+         exact_count: 1
+        register: ec2_host
+
+      # - debug: msg="{{ ec2_host['tagged_instances'][0]['id'] }}"
+
+      - name: Create elastic IP and associate it with workstation
+        ec2_eip:
+         device_id: "{{ ec2_host['tagged_instances'][0]['id'] }}"
+         region: "{{ aws_region }}"
+         aws_access_key: "{{ aws_access_key }}"
+         aws_secret_key: "{{ aws_secret_key }}"
+         release_on_disassociation: true
+        register: ec2_elastic_ip
+
+      - name: Register workstation facts
+        set_fact:
+         private_ip: "{{ ec2_host['tagged_instances'][0]['private_ip'] }}"
+         public_ip: "{{ ec2_elastic_ip['public_ip'] }}"
+         private_dns_name: "{{ ec2_host['tagged_instances'][0]['private_dns_name'] }}"
+
+      - name: Wait for SSH
+        local_action: wait_for
+                      host={{ item }}
+                      port=22
+                      state=started
+        with_items:
+         - "{{ public_ip }}"
+
+#---------------------------------------------------
+# Route53
+#---------------------------------------------------
+
+      - name: Create private zone
+        route53_zone:
+           zone: "{{ intranet }}"
+           state: "present"
+           vpc_id: "{{ vpc_id }}"
+           vpc_region: "{{ aws_region }}"
+           comment: "Internal zone for {{ ec2_key_name }}"
+           aws_access_key: "{{ aws_access_key }}"
+           aws_secret_key: "{{ aws_secret_key }}"
+        register: private_zone
+
+      # - debug: msg="{{ private_zone }}"
+
+      - name: Set private zone id fact
+        set_fact:
+          private_zone_id: "{{ private_zone['result']['zone_id'] }}"
+
+      - name: Create private record
+        route53:
+          hosted_zone_id: "{{ private_zone_id }}"
+          zone: "{{ intranet }}"
+          record: "workstation.{{ intranet }}"
+          type: A
+          ttl: 300
+          value: "{{ private_ip }}"
+          wait: yes
+          vpc_id: "{{ vpc_id }}"
+          private_zone: true
+          command: "create"
+          overwrite: yes
+          aws_access_key: "{{ aws_access_key }}"
+          aws_secret_key: "{{ aws_secret_key }}"
+
+      # - name: Create public record
+      #   route53:
+      #     zone: "{{ domain }}"
+      #     record: "{{ ec2_key_name }}.{{ domain }}"
+      #     type: A
+      #     ttl: 300
+      #     value: "{{ public_ip }}"
+      #     wait: yes
+      #     command: "create"
+      #     overwrite: yes
+      #     aws_access_key: "{{ aws_access_key }}"
+      #     aws_secret_key: "{{ aws_secret_key }}"
