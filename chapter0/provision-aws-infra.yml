@@ -342,7 +342,7 @@
            state: "present"
            vpc_id: "{{ vpc_id }}"
            vpc_region: "{{ aws_region }}"
-           comment: "Internal zone for {{ ec2_key_name }}"
+           comment: "Internal zone for {{ app_id }}"
            aws_access_key: "{{ aws_access_key }}"
            aws_secret_key: "{{ aws_secret_key }}"
         register: private_zone
