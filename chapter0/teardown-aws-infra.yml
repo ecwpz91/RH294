@@ -148,7 +148,7 @@
 
       - name: Delete node routes
         include: delete-route.yml zone={{ intranet }} record="server{{item}}.{{ intranet }}" private_zone="true"
-        with_sequence: start=1 end=2
+        with_sequence: start=1 end=4
         ignore_errors: true
 
       - name: Get private DNS zone
