@@ -313,7 +313,7 @@
            Type: "{{ ec2_instance_type }}"
           exact_count: 1
           assign_public_ip: yes
-        with_sequence: start=1 end=2
+        with_sequence: start=1 end=4
         register: ec2_nodes
 
       # - debug: msg="{{ ec2_nodes }}"
